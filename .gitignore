@@ -1,0 +1,35 @@
+# Виртуальное окружение
+venv/
+env/
+ENV/
+.venv/
+.ENV/
+*.env
+
+# Не добавлять модели
+models/*.pth
+checkpoints/
+*.h5
+
+# Файлы экспериментов и TensorBoard
+experiments/
+logs/
+*.log
+*.tfevents.*
+
+# Данные и датасеты
+data/
+!data/*.md  # Если есть файлы описания в data/, например README
+
+# Файлы конфигурации IDE
+.vscode/
+.idea/
+
+# Файлы конфигурации PyCharm
+*.iml
+*.ipr
+*.iws
+
+# Другие файлы
+*.swp
+*.swo
