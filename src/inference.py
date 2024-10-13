@@ -1,7 +1,17 @@
 import torch
 import cv2
+import configparser
 from key_point import GestureClassifier, MediaPipeKeypointExtractor
 import numpy as np
+
+# Чтение конфигурационного файла
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+# Получаем параметры из конфигурационного файла
+model_save_path = config['Paths']['model_save_path']
+num_keypoints = int(config['Model']['num_keypoints'])
+num_classes = int(config['Model']['num_classes'])
 
 def preprocess_image(image):
     # Здесь можно добавить предобработку изображения, если это необходимо.
@@ -43,9 +53,9 @@ def run_inference(model, device):
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Загрузка модели
-    model = GestureClassifier(num_keypoints=21, num_classes=6)
-    model.load_state_dict(torch.load('best_gesture_classifier.pth'))
+    # Загрузка модели с параметрами из конфига
+    model = GestureClassifier(num_keypoints=num_keypoints, num_classes=num_classes)
+    model.load_state_dict(torch.load(model_save_path))
     model.to(device)
     model.eval()
 
