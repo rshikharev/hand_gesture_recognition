@@ -9,6 +9,32 @@ import configparser
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+from PIL import ImageOps
+
+class ResizeWithPadding:
+    def __init__(self, size, fill_color=(0, 0, 0)):
+        """
+        Изменение размера изображения с сохранением пропорций и добавлением паддинга.
+        :param size: Размер выходного изображения (ширина, высота).
+        :param fill_color: Цвет заполнения для паддинга (по умолчанию черный).
+        """
+        self.size = size
+        self.fill_color = fill_color
+
+    def __call__(self, image):
+        # Изменяем размер изображения с сохранением пропорций
+        image.thumbnail(self.size, Image.ANTIALIAS)
+        
+        # Создаем новое изображение с нужным размером и заливаем его цветом
+        new_image = Image.new("RGB", self.size, self.fill_color)
+        
+        # Вставляем измененное изображение в центр нового
+        new_image.paste(image, ((self.size[0] - image.size[0]) // 2,
+                                (self.size[1] - image.size[1]) // 2))
+        
+        return new_image
+    
+    
 class HandGestureDataset(Dataset):
     def __init__(self, dataset_path=None, class_to_idx=None, transform=None, image_size=(224, 224)):
         """
@@ -21,8 +47,10 @@ class HandGestureDataset(Dataset):
         # Если путь к данным не указан, берем его из конфига
         self.dataset_path = dataset_path if dataset_path else config['Paths']['train_data_path']
         self.image_size = image_size
+        
+        # Используем сохранение соотношения сторон с паддингом
         self.transform = transform if transform else transforms.Compose([
-            transforms.Resize(self.image_size),  # Изменяем размер всех изображений до заданного размера
+            ResizeWithPadding(self.image_size),  # Изменяем размер изображения с паддингом
             transforms.ToTensor()
         ])
 

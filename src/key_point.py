@@ -23,7 +23,8 @@ class MediaPipeKeypointExtractor:
     def extract_keypoints(self, image):
         """
         Извлекаем ключевые точки для изображения руки.
-        Возвращаем 21 ключевую точку (x, y) или None, если рука не была обнаружена.
+        Возвращаем 21 ключевую точку (x, y) и landmarks (для отображения),
+        или None, если рука не была обнаружена.
         """
         # Проверяем, является ли изображение тензором, если да — преобразуем его в numpy
         if isinstance(image, torch.Tensor):
@@ -32,17 +33,25 @@ class MediaPipeKeypointExtractor:
         # Приводим изображение в формат uint8
         image = (image * 255).astype(np.uint8)
 
+        # Преобразуем изображение в RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+        # Используем MediaPipe для обработки изображения
         result = self.mp_hands.process(image_rgb)
 
+        # Если найдены landmarks (ключевые точки рук)
         if result.multi_hand_landmarks:
-            hand_landmarks = result.multi_hand_landmarks[0]
+            hand_landmarks = result.multi_hand_landmarks[0]  # Берем первую найденную руку
             keypoints = []
             for landmark in hand_landmarks.landmark:
-                keypoints.append([landmark.x, landmark.y])
-            return np.array(keypoints).flatten()  # Возвращаем плоский массив ключевых точек
+                keypoints.append([landmark.x, landmark.y])  # Извлекаем координаты ключевых точек (x, y)
+            
+            # Возвращаем массив ключевых точек и сами landmarks
+            return np.array(keypoints).flatten(), hand_landmarks
         else:
-            return None
+            # Если рука не была обнаружена, возвращаем None
+            return None, None
+
         
 class GestureClassifier(nn.Module):
     def __init__(self, num_keypoints=num_keypoints, num_classes=num_classes, dropout_rate=0.3, l2_reg=0.01):

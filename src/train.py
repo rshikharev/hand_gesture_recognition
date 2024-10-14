@@ -3,7 +3,6 @@ import cv2
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import optuna
 import numpy as np
 from key_point import GestureClassifier, MediaPipeKeypointExtractor
 from dataset import HandGestureDataset
@@ -73,14 +72,14 @@ def train_epoch(model, dataloader, extractor, optimizer, criterion, device):
             keypoints = extractor.extract_keypoints(img)
             if keypoints is not None:
                 keypoints_batch.append(keypoints)
-                valid_indices.append(i)  # Сохраняем индексы валидных данных
+                valid_indices.append(i)
 
         # Пропускаем, если нет валидных данных
         if len(keypoints_batch) == 0:
             continue
 
         keypoints_batch = torch.tensor(keypoints_batch, dtype=torch.float32).to(device)
-        target_gestures = target_gestures[valid_indices].to(device)  # Фильтруем только валидные метки
+        target_gestures = target_gestures[valid_indices].to(device)
 
         optimizer.zero_grad()
         output = model(keypoints_batch)
@@ -199,15 +198,18 @@ def train_model(num_epochs, train_loader, val_loader, model, optimizer, criterio
 
     writer.close()
 
-# Optuna для гиперпараметров
-def objective(trial):
+# Запуск обучения с фиксированными гиперпараметрами
+if __name__ == '__main__':
+    print(f'torch.cuda.is_available() - {torch.cuda.is_available()}')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5)
-    learning_rate = trial.suggest_float("lr", 1e-4, 1e-2)
-    batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
-    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "SGD"])
+    # Фиксированные гиперпараметры
+    dropout_rate = 0.3
+    learning_rate = 0.001
+    batch_size = 64
+    optimizer_name = "Adam"
 
+    # Инициализация модели и оптимизатора
     model = GestureClassifier(num_keypoints=num_keypoints, num_classes=num_classes, dropout_rate=dropout_rate).to(device)
 
     if optimizer_name == "Adam":
@@ -218,18 +220,12 @@ def objective(trial):
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
     criterion = nn.CrossEntropyLoss()
 
+    # Загрузка данных
     train_dataset = HandGestureDataset(train_data_path, transform=None)
     val_dataset = HandGestureDataset(val_data_path, transform=None)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    train_model(20, train_loader, val_loader, model, optimizer, criterion, scheduler, device, patience=5)
-
-    # После обучения возвращаем лучшую валидационную потерю для Optuna
-    return best_val_loss
-
-# Запуск Optuna для подбора гиперпараметров
-if __name__ == '__main__':
-    study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=50)
+    # Запуск обучения
+    train_model(5, train_loader, val_loader, model, optimizer, criterion, scheduler, device, patience=5)
