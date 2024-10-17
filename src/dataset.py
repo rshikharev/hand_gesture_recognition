@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -9,31 +10,73 @@ import configparser
 config = configparser.ConfigParser()
 config.read('config.ini')
 
-from PIL import ImageOps
-
-class ResizeWithPadding:
-    def __init__(self, size, fill_color=(0, 0, 0)):
+class FreiHANDataset(Dataset):
+    def __init__(self, root_dir, transform=None, mode='train'):
         """
-        Изменение размера изображения с сохранением пропорций и добавлением паддинга.
-        :param size: Размер выходного изображения (ширина, высота).
-        :param fill_color: Цвет заполнения для паддинга (по умолчанию черный).
+        :param root_dir: Корневая директория с данными FreiHAND.
+        :param transform: Трансформации для изображений (например, Resize, ToTensor).
+        :param mode: 'train' для тренировочных данных или 'eval' для данных оценки.
         """
-        self.size = size
-        self.fill_color = fill_color
+        self.root_dir = root_dir
+        self.mode = mode
+        self.transform = transform if transform else transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
+        
+        # Загрузка аннотаций
+        if self.mode == 'train':
+            self.image_dir = os.path.join(self.root_dir, 'training')
+            with open(os.path.join(self.root_dir, 'training_K.json'), 'r') as f:
+                self.K_data = json.load(f)
+            with open(os.path.join(self.root_dir, 'training_scale.json'), 'r') as f:
+                self.scale_data = json.load(f)
+            with open(os.path.join(self.root_dir, 'training_xyz.json'), 'r') as f:
+                self.keypoints_data = json.load(f)
+        elif self.mode == 'eval':
+            self.image_dir = os.path.join(self.root_dir, 'evaluation')
+            with open(os.path.join(self.root_dir, 'evaluation_K.json'), 'r') as f:
+                self.K_data = json.load(f)
+            with open(os.path.join(self.root_dir, 'evaluation_scale.json'), 'r') as f:
+                self.scale_data = json.load(f)
+        else:
+            raise ValueError("Mode должен быть 'train' или 'eval'")
 
-    def __call__(self, image):
-        # Изменяем размер изображения с сохранением пропорций
-        image.thumbnail(self.size, Image.ANTIALIAS)
-        
-        # Создаем новое изображение с нужным размером и заливаем его цветом
-        new_image = Image.new("RGB", self.size, self.fill_color)
-        
-        # Вставляем измененное изображение в центр нового
-        new_image.paste(image, ((self.size[0] - image.size[0]) // 2,
-                                (self.size[1] - image.size[1]) // 2))
-        
-        return new_image
-    
+        # Загрузка списка файлов изображений
+        self.image_paths = sorted([os.path.join(self.image_dir, img) for img in os.listdir(self.image_dir)])
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        # Загружаем изображение
+        image_path = self.image_paths[idx]
+        image = Image.open(image_path).convert("RGB")
+
+        # Применяем трансформации
+        if self.transform:
+            image = self.transform(image)
+
+        # Загружаем аннотации
+        if self.mode == 'train':
+            keypoints = np.array(self.keypoints_data[idx])  # 3D координаты ключевых точек (21 x 3)
+            keypoints = torch.tensor(keypoints, dtype=torch.float32)
+
+            K = np.array(self.K_data[idx])  # Матрица камеры
+            K = torch.tensor(K, dtype=torch.float32)
+
+            scale = self.scale_data[idx]  # Масштаб руки
+            scale = torch.tensor(scale, dtype=torch.float32)
+
+            return image, keypoints, K, scale
+        else:
+            K = np.array(self.K_data[idx])  # Матрица камеры
+            K = torch.tensor(K, dtype=torch.float32)
+
+            scale = self.scale_data[idx]  # Масштаб руки
+            scale = torch.tensor(scale, dtype=torch.float32)
+
+            return image, K, scale
     
 class HandGestureDataset(Dataset):
     def __init__(self, dataset_path=None, class_to_idx=None, transform=None, image_size=(224, 224)):
@@ -47,10 +90,8 @@ class HandGestureDataset(Dataset):
         # Если путь к данным не указан, берем его из конфига
         self.dataset_path = dataset_path if dataset_path else config['Paths']['train_data_path']
         self.image_size = image_size
-        
-        # Используем сохранение соотношения сторон с паддингом
         self.transform = transform if transform else transforms.Compose([
-            ResizeWithPadding(self.image_size),  # Изменяем размер изображения с паддингом
+            transforms.Resize(self.image_size),  # Изменяем размер всех изображений до заданного размера
             transforms.ToTensor()
         ])
 

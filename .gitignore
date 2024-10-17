@@ -10,7 +10,7 @@ ENV/
 models/*.pth
 checkpoints/
 *.h5
-
+*.pth
 # Файлы экспериментов и TensorBoard
 experiments/
 logs/
@@ -33,3 +33,4 @@ data/
 # Другие файлы
 *.swp
 *.swo
+*.pyc

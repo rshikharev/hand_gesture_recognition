@@ -4,13 +4,15 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
-from key_point import GestureClassifier, MediaPipeKeypointExtractor
+from key_point import GestureClassifier, CustomKeypointExtractor  # Обновлен для использования CustomKeypointExtractor
 from dataset import HandGestureDataset
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import time
+from PIL import Image
+from tqdm import tqdm
 
 # Чтение конфигурационного файла
 config = configparser.ConfigParser()
@@ -20,6 +22,7 @@ config.read('config.ini')
 train_data_path = config['Paths']['train_data_path']
 val_data_path = config['Paths']['val_data_path']
 model_save_path = config['Paths']['model_save_path']
+keypoint_model_path = config['Paths']['hourglass_model_save_path']  # Добавлен путь к вашей модели ключевых точек
 confusion_matrix_save_path = config['Paths']['confusion_matrix_save_path']
 
 num_keypoints = int(config['Model']['num_keypoints'])
@@ -28,11 +31,6 @@ num_classes = int(config['Model']['num_classes'])
 # Early stopping class
 class EarlyStopping:
     def __init__(self, patience=5, delta=0):
-        """
-        Инициализация.
-        :param patience: Сколько эпох ждать улучшений.
-        :param delta: Минимальное изменение для квалификации как улучшение.
-        """
         self.patience = patience
         self.delta = delta
         self.counter = 0
@@ -50,7 +48,7 @@ class EarlyStopping:
             self.best_loss = val_loss
             self.counter = 0
 
-# Функция для извлечения ключевых точек с помощью MediaPipe
+# Функция для извлечения ключевых точек с помощью вашей обученной модели
 def get_keypoints(image, extractor):
     keypoints = extractor.extract_keypoints(image)
     if keypoints is not None:
@@ -64,22 +62,26 @@ def train_epoch(model, dataloader, extractor, optimizer, criterion, device):
     correct = 0
     total = 0
 
-    for batch_idx, (images, target_gestures) in enumerate(dataloader):
+    for batch_idx, (images, target_gestures) in enumerate(tqdm(dataloader, desc="Training")):
         keypoints_batch = []
         valid_indices = []
 
         for i, img in enumerate(images):
             keypoints = extractor.extract_keypoints(img)
-            if keypoints is not None:
-                keypoints_batch.append(keypoints)
-                valid_indices.append(i)
+
+            # Пропускаем семпл, если ключевые точки не найдены
+            if keypoints is None:
+                continue
+
+            keypoints_batch.append(keypoints)
+            valid_indices.append(i)
 
         # Пропускаем, если нет валидных данных
         if len(keypoints_batch) == 0:
             continue
 
         keypoints_batch = torch.tensor(keypoints_batch, dtype=torch.float32).to(device)
-        target_gestures = target_gestures[valid_indices].to(device)
+        target_gestures = target_gestures[valid_indices].to(device)  # Фильтруем только валидные метки
 
         optimizer.zero_grad()
         output = model(keypoints_batch)
@@ -100,7 +102,6 @@ def train_epoch(model, dataloader, extractor, optimizer, criterion, device):
     train_loss = running_loss / len(dataloader)
     train_acc = 100 * correct / total
     return train_loss, train_acc
-
 
 # Валидация модели на валидационном наборе
 def validate_epoch(model, dataloader, extractor, criterion, device):
@@ -149,11 +150,13 @@ def validate_epoch(model, dataloader, extractor, criterion, device):
     val_acc = 100 * correct / total
     return val_loss, val_acc, true_labels, pred_labels
 
-
 # Основная функция обучения с логированием и сохранением лучших весов
 def train_model(num_epochs, train_loader, val_loader, model, optimizer, criterion, scheduler, device, patience=5):
     writer = SummaryWriter()
-    extractor = MediaPipeKeypointExtractor()
+
+    # Инициализация вашей обученной модели для извлечения ключевых точек
+    extractor = CustomKeypointExtractor(keypoint_model_path, device=device)
+    
     best_val_loss = float('inf')
 
     early_stopping = EarlyStopping(patience=patience)
@@ -206,7 +209,7 @@ if __name__ == '__main__':
     # Фиксированные гиперпараметры
     dropout_rate = 0.3
     learning_rate = 0.001
-    batch_size = 64
+    batch_size = 32
     optimizer_name = "Adam"
 
     # Инициализация модели и оптимизатора
@@ -228,4 +231,4 @@ if __name__ == '__main__':
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     # Запуск обучения
-    train_model(5, train_loader, val_loader, model, optimizer, criterion, scheduler, device, patience=5)
+    train_model(10, train_loader, val_loader, model, optimizer, criterion, scheduler, device, patience=5)
